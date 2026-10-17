@@ -4,8 +4,49 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Electricity Monitor</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="app.js" defer></script>
 </head>
 <body>
-    <h1>Electricity Monitor</h1>
+    <main>
+        <header>
+            <h1>Electricity</h1>
+            <span id="updated" class="muted"></span>
+        </header>
+
+        <p id="error" class="error" hidden></p>
+
+        <section id="status" class="card status">
+            <div id="state" class="state">Loading…</div>
+            <div id="duration" class="duration"></div>
+            <div id="since" class="muted"></div>
+        </section>
+
+        <section class="totals">
+            <div class="card">
+                <div class="muted">Today</div>
+                <div id="today" class="total">–</div>
+            </div>
+            <div class="card">
+                <div class="muted">This week</div>
+                <div id="week" class="total">–</div>
+            </div>
+        </section>
+
+        <section class="card">
+            <div class="tabs">
+                <button data-filter="12h" class="active">12h</button>
+                <button data-filter="today">Today</button>
+                <button data-filter="this_week">This week</button>
+            </div>
+            <svg id="chart" height="60"></svg>
+            <div class="legend">
+                <span><i class="swatch on"></i>On</span>
+                <span><i class="swatch off"></i>Off</span>
+                <span><i class="swatch no-data"></i>No data</span>
+            </div>
+            <p id="chart-info" class="muted"></p>
+        </section>
+    </main>
 </body>
 </html>
