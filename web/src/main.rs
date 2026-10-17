@@ -4,6 +4,7 @@ use axum::{
 };
 use sqlx::{SqlitePool, sqlite::SqliteConnectOptions};
 use std::{str::FromStr, sync::Arc};
+use tower_http::services::ServeDir;
 
 use crate::{config::Config, state::AppState};
 
@@ -14,14 +15,20 @@ mod models;
 mod routes;
 mod services;
 mod state;
+mod time_range;
 
 fn register_routes(state: Arc<AppState>) -> Router<Arc<AppState>> {
     let routes = Router::new()
         .route("/beat", post(routes::beat))
-        .route("/status/{device_id}", get(routes::status))
         // Only applies to the routes above; anything added after this stays public
         .route_layer(middleware::from_fn_with_state(state, auth::require_api_key))
-        .route("/health", get(|| async { "OK" }));
+        .route("/status/{device_id}", get(routes::status))
+        .route("/summary/{device_id}", get(routes::summary))
+        .route("/period/{device_id}", get(routes::periods))
+        .route("/health", get(|| async { "OK" }))
+        // Paths that don't match a route above are served from the static/ folder:
+        // `/` serves static/index.html, `/app.js` serves static/app.js, and missing files 404
+        .fallback_service(ServeDir::new("static"));
 
     routes
 }

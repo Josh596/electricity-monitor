@@ -1,9 +1,11 @@
 use chrono::{DateTime, TimeDelta, Utc};
 use sqlx::SqliteConnection;
 
-use crate::models::{PowerState, ResetReason};
+use crate::{
+    models::{PowerState, ResetReason},
+    time_range::Span,
+};
 
-/// The columns of the latest power period needed to handle a beat or a status request
 #[derive(Debug, Clone)]
 pub struct LatestPeriod {
     pub id: i64,
@@ -38,6 +40,30 @@ pub fn current_status(
     }
 }
 
+/// Turns power periods (ordered oldest first) into spans. Every period ends at its last beat,
+/// except the latest one while the power is still on, which runs until now.
+pub fn periods_to_spans(
+    periods: &[LatestPeriod],
+    state: PowerState,
+    now: DateTime<Utc>,
+) -> Vec<Span> {
+    let mut spans: Vec<Span> = periods
+        .iter()
+        .map(|p| Span {
+            start: p.started_at,
+            end: p.last_seen_at,
+        })
+        .collect();
+
+    if state == PowerState::On
+        && let Some(latest) = spans.last_mut()
+    {
+        latest.end = now;
+    }
+
+    spans
+}
+
 #[derive(Debug, PartialEq)]
 pub enum BeatAction {
     /// New boot (or first beat ever): start a new power period
@@ -46,7 +72,6 @@ pub enum BeatAction {
     Update { id: i64 },
 }
 
-/// Decides how to handle a beat. No database involved, so it can be unit tested directly.
 pub fn decide_beat_action(
     latest: Option<&LatestPeriod>,
     boot_id: u32,
@@ -105,7 +130,7 @@ pub async fn insert_power_period(
     Ok(())
 }
 
-pub async fn touch_power_period(
+pub async fn update_power_period(
     conn: &mut SqliteConnection,
     id: i64,
     now: DateTime<Utc>,
@@ -119,6 +144,68 @@ pub async fn touch_power_period(
     .await?;
 
     Ok(())
+}
+
+pub async fn fetch_periods_between(
+    conn: &mut SqliteConnection,
+    device_id: &str,
+    a: DateTime<Utc>,
+    b: DateTime<Utc>,
+) -> Result<Vec<LatestPeriod>, sqlx::Error> {
+    sqlx::query_as!(
+        LatestPeriod,
+        r#"
+        SELECT 
+            id, 
+            boot_id as "boot_id: u32", 
+            started_at as "started_at: DateTime<Utc>", 
+            last_seen_at as "last_seen_at: DateTime<Utc>" 
+        FROM power_periods 
+        WHERE device_id = ? AND started_at < ? AND last_seen_at > ? ORDER BY started_at ASC"#,
+        device_id,
+        b,
+        a
+    )
+    .fetch_all(conn)
+    .await
+}
+
+pub async fn get_total_power(
+    conn: &mut SqliteConnection,
+    device_id: &str,
+    a: DateTime<Utc>,
+    b: DateTime<Utc>,
+    now: DateTime<Utc>,
+    outage_threshold: TimeDelta,
+) -> Result<TimeDelta, sqlx::Error> {
+    let window = Span { start: a, end: b };
+
+    let spans = spans_in_window(conn, device_id, a, b, now, outage_threshold).await?;
+
+    let total = spans.iter().map(|span| span.overlap(&window)).sum();
+
+    Ok(total)
+}
+
+pub async fn spans_in_window(
+    conn: &mut SqliteConnection,
+    device_id: &str,
+    a: DateTime<Utc>,
+    b: DateTime<Utc>,
+    now: DateTime<Utc>,
+    outage_threshold: TimeDelta,
+) -> Result<Vec<Span>, sqlx::Error> {
+    let periods = fetch_periods_between(conn, device_id, a, b).await?;
+
+    let Some(latest) = periods.last() else {
+        return Ok(vec![]);
+    };
+
+    let state = current_status(latest, now, outage_threshold).state;
+
+    let spans = periods_to_spans(&periods, state, now);
+
+    Ok(spans)
 }
 
 #[cfg(test)]
@@ -137,6 +224,40 @@ mod tests {
             started_at: now() - TimeDelta::hours(1),
             last_seen_at: now() - seen_ago,
         }
+    }
+
+    /// A reboot: an older period that ended 2 minutes before the latest one (from `period`) began
+    fn two_periods() -> Vec<LatestPeriod> {
+        let older = LatestPeriod {
+            id: 2,
+            boot_id: 6,
+            started_at: now() - TimeDelta::hours(5),
+            last_seen_at: now() - TimeDelta::hours(1) - TimeDelta::minutes(2),
+        };
+        vec![older, period(TimeDelta::seconds(20))]
+    }
+
+    #[test]
+    fn spans_end_at_last_beat_when_off() {
+        let periods = two_periods();
+        let spans = periods_to_spans(&periods, PowerState::Off, now());
+        assert_eq!(spans.len(), 2);
+        assert_eq!(spans[0].end, periods[0].last_seen_at);
+        assert_eq!(spans[1].end, periods[1].last_seen_at);
+    }
+
+    #[test]
+    fn latest_span_runs_until_now_when_on() {
+        let periods = two_periods();
+        let spans = periods_to_spans(&periods, PowerState::On, now());
+        // The older period is untouched, only the latest one is extended
+        assert_eq!(spans[0].end, periods[0].last_seen_at);
+        assert_eq!(spans[1].end, now());
+    }
+
+    #[test]
+    fn no_periods_gives_no_spans() {
+        assert!(periods_to_spans(&[], PowerState::On, now()).is_empty());
     }
 
     #[test]

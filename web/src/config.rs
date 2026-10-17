@@ -3,6 +3,8 @@ use std::env;
 const DEFAULT_DATABASE_URL: &str = "sqlite:data.db";
 const DEFAULT_BIND_ADDR: &str = "0.0.0.0:3000";
 const DEFAULT_OUTAGE_THRESHOLD_SECS: i64 = 90;
+const DEFAULT_UTC_OFFSET_HOURS: i32 = 1; // Lagos (WAT)
+pub const WEEK_START: chrono::Weekday = chrono::Weekday::Sun;
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -10,6 +12,7 @@ pub struct Config {
     pub bind_address: String,
     pub outage_threshold: chrono::TimeDelta,
     pub api_key: String,
+    pub utc_offset: chrono::FixedOffset,
 }
 
 impl Config {
@@ -27,11 +30,23 @@ impl Config {
 
         let outage_threshold = chrono::Duration::seconds(threshold_secs);
 
+        let offset_hours: i32 = env::var("UTC_OFFSET_HOURS")
+            .ok()
+            .map(|v| {
+                v.parse()
+                    .expect("UTC_OFFSET_HOURS must be a whole number of hours")
+            })
+            .unwrap_or(DEFAULT_UTC_OFFSET_HOURS);
+
+        let utc_offset = chrono::FixedOffset::east_opt(offset_hours * 3600)
+            .expect("UTC_OFFSET_HOURS must be between -23 and 23");
+
         Ok(Config {
             database_url,
             bind_address,
             outage_threshold,
             api_key,
+            utc_offset,
         })
     }
 }
