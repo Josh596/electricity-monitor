@@ -4,7 +4,7 @@ use axum::{
 };
 use sqlx::{SqlitePool, sqlite::SqliteConnectOptions};
 use std::{str::FromStr, sync::Arc};
-use tower_http::services::ServeDir;
+use tower_http::{compression::CompressionLayer, services::ServeDir};
 
 use crate::{config::Config, state::AppState};
 
@@ -28,7 +28,8 @@ fn register_routes(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .route("/health", get(|| async { "OK" }))
         // Paths that don't match a route above are served from the static/ folder:
         // `/` serves static/index.html, `/app.js` serves static/app.js, and missing files 404
-        .fallback_service(ServeDir::new("static"));
+        .fallback_service(ServeDir::new("static"))
+        .layer(CompressionLayer::new());
 
     routes
 }
