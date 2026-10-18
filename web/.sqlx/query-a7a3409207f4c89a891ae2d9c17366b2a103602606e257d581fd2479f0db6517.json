@@ -1,0 +1,62 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT \n            id, \n            boot_id as \"boot_id: u32\", \n            started_at as \"started_at: DateTime<Utc>\", \n            last_seen_at as \"last_seen_at: DateTime<Utc>\" \n        FROM power_periods \n        WHERE device_id = ? AND started_at < ? AND last_seen_at > ? ORDER BY started_at ASC",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "power_periods",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "boot_id: u32",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "power_periods",
+            "name": "boot_id"
+          }
+        }
+      },
+      {
+        "name": "started_at: DateTime<Utc>",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "power_periods",
+            "name": "started_at"
+          }
+        }
+      },
+      {
+        "name": "last_seen_at: DateTime<Utc>",
+        "ordinal": 3,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "power_periods",
+            "name": "last_seen_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "a7a3409207f4c89a891ae2d9c17366b2a103602606e257d581fd2479f0db6517"
+}

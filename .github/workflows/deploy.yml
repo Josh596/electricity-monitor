@@ -1,0 +1,102 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Never run two deploys at once; a newer push waits for the current one
+concurrency: deploy
+
+env:
+  SERVICE: electricity-monitor # systemd unit name on the VPS
+  APP_DIR: electricity-monitor # relative to the deploy user's home
+
+jobs:
+  build:
+    # Built against an older glibc so the binary also runs on the VPS's (same or newer) release
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: web
+
+      # The query! macros check SQL against .sqlx/ rather than a live database
+      - name: Build
+        run: cargo build --release --locked
+        env:
+          SQLX_OFFLINE: "true"
+
+      # tar keeps the executable bit, which upload-artifact drops
+      - name: Package
+        run: tar -czf deploy.tar.gz -C target/release web -C ../.. static
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deploy
+          path: web/deploy.tar.gz
+          retention-days: 7
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: deploy
+
+      - name: Set up SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519
+
+      - name: Upload
+        env:
+          TARGET: ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}
+        run: scp deploy.tar.gz "$TARGET:$APP_DIR/deploy.tar.gz"
+
+      - name: Install and restart
+        env:
+          TARGET: ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}
+        run: |
+          ssh "$TARGET" \
+            APP_DIR="$APP_DIR" SERVICE="$SERVICE" bash -s <<'EOF'
+          set -euo pipefail
+          cd "$HOME/$APP_DIR"
+
+          # Unpack into staging so a bad tarball can't leave a half-installed app
+          rm -rf staging && mkdir staging
+          tar -xzf deploy.tar.gz -C staging
+
+          # .backup is safe while the app is running (a plain cp isn't, with WAL)
+          if command -v sqlite3 >/dev/null && [ -f data.db ]; then
+            sqlite3 data.db ".backup data.db.bak"
+          fi
+
+          # rename is atomic, so this works while the old binary is still running
+          mv staging/web web
+          rm -rf static.old
+          if [ -d static ]; then mv static static.old; fi
+          mv staging/static static
+
+          sudo systemctl restart "$SERVICE"
+          sleep 3
+          systemctl is-active --quiet "$SERVICE" || {
+            journalctl -u "$SERVICE" -n 50 --no-pager
+            exit 1
+          }
+
+          rm -rf staging static.old deploy.tar.gz
+          EOF

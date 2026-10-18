@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO power_periods (device_id, boot_id, reset_reason, started_at, last_seen_at) VALUES (?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "294617747b69b52e8dad5f24757f23722a5b9ce69ebfb05ba20e71e9ff89b640"
+}
