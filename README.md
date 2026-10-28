@@ -4,7 +4,7 @@ Know whether there's light (power) at home, since when, and how many hours you'v
 
 An ESP32-C3 plugged into a wall socket (preferably one powered only by NEPA) sends a heartbeat ("beat") to a Rust server every 30 seconds. When the beats stop for 90 seconds, the power is assumed to be off, i.e., there is no light. A dashboard shows the current state, today's and this week's total and a timeline. 
 
-Full write-up: [Building a Home Electricity Monitor](add_link_to_article)
+<!-- Full write-up: [Building a Home Electricity Monitor](add_link_to_article) -->
 
 ![Dashboard](docs/dashboard.jpg)
 
